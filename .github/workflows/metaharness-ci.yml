@@ -211,3 +211,76 @@ jobs:
             exit 1
           }
           echo "✓ eject correctly refused in-repo target"
+
+  similarity-tests:
+    # iter 40 — direct CI gate on the ADR-152 §3.1 contract.
+    # Runs without any @metaharness/* installed — the production module is
+    # pure-TS and must work in that environment (architectural constraint #4).
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Unit tests — _similarity.mjs (iter 39, 53 assertions)
+        run: node plugins/ruflo-metaharness/scripts/test-similarity.mjs
+
+      - name: Spike invariants still hold (iter 35 regression anchor)
+        run: node plugins/ruflo-metaharness/scripts/_spike-similarity.mjs
+
+      - name: CLI skill — file-input round-trip
+        run: |
+          set -e
+          cat > /tmp/a.json <<'JSON'
+          {"score":{"harnessFit":78,"compileConfidence":92,"taskCoverage":65,"toolSafety":88,"memoryUsefulness":70,"estCostPerRunUsd":0.04,"recommendedMode":"CLI + MCP","archetype":"compliance-harness","template":"vertical:legal"},"genome":{"repo_type":"node_mcp_ci","agent_topology":["a1","a2","a3","a4"],"risk_score":0.45,"test_confidence":0.7,"publish_readiness":0.6}}
+          JSON
+          cat > /tmp/b.json <<'JSON'
+          {"score":{"harnessFit":75,"compileConfidence":90,"taskCoverage":70,"toolSafety":90,"memoryUsefulness":72,"estCostPerRunUsd":0.05,"recommendedMode":"CLI + MCP","archetype":"compliance-harness","template":"vertical:support"},"genome":{"repo_type":"node_mcp_ci","agent_topology":["b1","b2","b3","a3","a4"],"risk_score":0.40,"test_confidence":0.75,"publish_readiness":0.65}}
+          JSON
+          OUT=$(node plugins/ruflo-metaharness/scripts/similarity.mjs --a /tmp/a.json --b /tmp/b.json --format json)
+          echo "$OUT"
+          echo "$OUT" | grep -q '"overall"' || { echo "FAIL: no overall field"; exit 1; }
+          echo "✓ similarity skill emits valid JSON"
+
+      - name: audit-trend structural-distance integration (iter 38)
+        run: |
+          set -e
+          cat > /tmp/audit-baseline.json <<'JSON'
+          {"startedAt":"2026-06-15T00:00:00Z","composite":{"worst":"clean"},"components":{"oiaManifest":{},"threatModel":{},"mcpScan":{"json":{"findings":[]}}},"fingerprint":{"score":{"harnessFit":82,"recommendedMode":"CLI + MCP","archetype":"typescript-sdk-harness","template":"vertical:coding"},"genome":{"repo_type":"node_mcp_ci","agent_topology":["maintainer","tester","security","release"],"risk_score":0.3,"test_confidence":0.85,"publish_readiness":0.9}}}
+          JSON
+          cat > /tmp/audit-current.json <<'JSON'
+          {"startedAt":"2026-06-16T00:00:00Z","composite":{"worst":"low"},"components":{"oiaManifest":{},"threatModel":{},"mcpScan":{"json":{"findings":[]}}},"fingerprint":{"score":{"harnessFit":75,"recommendedMode":"CLI + MCP","archetype":"typescript-sdk-harness","template":"vertical:coding"},"genome":{"repo_type":"node_mcp_ci","agent_topology":["maintainer","tester","security","release","experimental"],"risk_score":0.35,"test_confidence":0.78,"publish_readiness":0.85}}}
+          JSON
+          OUT=$(node plugins/ruflo-metaharness/scripts/audit-trend.mjs --baseline /tmp/audit-baseline.json --current /tmp/audit-current.json --format json)
+          echo "$OUT" | python3 -c "import json,sys; d=json.load(sys.stdin); sd=d['delta']['structuralDistance']; assert sd['verdict'] in ('near-identical','minor-drift'), sd; assert 0 < sd['distance'] < 0.2, sd; print('✓ structural-distance:', sd['verdict'], 'distance=' + str(sd['distance']))"
+
+      - name: Graceful fallback when fingerprint missing
+        run: |
+          set -e
+          cat > /tmp/audit-old.json <<'JSON'
+          {"startedAt":"2026-06-01T00:00:00Z","composite":{"worst":"clean"},"components":{"oiaManifest":{},"threatModel":{},"mcpScan":{"json":{"findings":[]}}}}
+          JSON
+          cat > /tmp/audit-new.json <<'JSON'
+          {"startedAt":"2026-06-16T00:00:00Z","composite":{"worst":"clean"},"components":{"oiaManifest":{},"threatModel":{},"mcpScan":{"json":{"findings":[]}}},"fingerprint":{"score":{"harnessFit":82},"genome":{"repo_type":"node_mcp_ci","agent_topology":["x"]}}}
+          JSON
+          OUT=$(node plugins/ruflo-metaharness/scripts/audit-trend.mjs --baseline /tmp/audit-old.json --current /tmp/audit-new.json --format json)
+          echo "$OUT" | python3 -c "import json,sys; d=json.load(sys.stdin); assert d['delta']['structuralDistance']['verdict']=='unavailable', d['delta']['structuralDistance']; print('✓ graceful fallback when fingerprint absent')"
+
+      - name: Distance alert gate exits 1 below threshold
+        run: |
+          set -e
+          # The fixtures from the previous step produce overall ~0.97;
+          # threshold 0.99 must trigger exit 1.
+          if node plugins/ruflo-metaharness/scripts/audit-trend.mjs \
+            --baseline /tmp/audit-baseline.json \
+            --current /tmp/audit-current.json \
+            --alert-on-distance-below 0.99 > /tmp/trend-alert.txt 2>&1; then
+            echo "FAIL: --alert-on-distance-below should have exited 1"
+            cat /tmp/trend-alert.txt
+            exit 1
+          else
+            echo "✓ structural-distance alert correctly exited non-zero (got $?)"
+          fi
+

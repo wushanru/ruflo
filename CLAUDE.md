@@ -1129,7 +1129,10 @@ npx ruflo metaharness oia-audit --alert-on-worst high
                                                  # composite weekly audit → memory
 npx ruflo metaharness audit-list --since 30d     # enumerate audit records
 npx ruflo metaharness audit-trend \              # diff two audits (drift)
-  --baseline-key <a> --current-key <b> --alert-on-worsening
+  --baseline-key <a> --current-key <b> --alert-on-worsening \
+  --alert-on-distance-below 0.85               # iter 38 — structural-distance gate (ADR-152 §3.1)
+npx ruflo metaharness similarity \               # iter 36 — ADR-152 §3.1 weighted similarity
+  --a a.json --b b.json [--per-dimension] [--alert-below 0.5]
 npx ruflo metaharness mint --name foo --template vertical:coding --confirm
 
 # Dedicated command
@@ -1147,6 +1150,7 @@ mcp__claude-flow__metaharness_threat_model
 mcp__claude-flow__metaharness_oia_audit
 mcp__claude-flow__metaharness_audit_list
 mcp__claude-flow__metaharness_audit_trend
+mcp__claude-flow__metaharness_similarity          # iter 36 — ADR-152 §3.1 genome similarity
 ```
 
 ### Routing integration (ADR-148/149)
