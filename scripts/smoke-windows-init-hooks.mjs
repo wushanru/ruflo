@@ -59,7 +59,13 @@ const result = spawnSync(
       FORCE_COLOR: '0',
     },
     encoding: 'utf8',
-    timeout: 60_000,
+    // iter 123 — bumped from 60_000 to 180_000. Windows cold-start `ruflo
+    // init` consistently exceeds 60s (pnpm cache cold, hnswlib-node gyp
+    // probe overhead, antivirus stat). The init exited with status=null
+    // (= the spawn timer fired) which means it hadn't even finished the
+    // init handler, never mind written settings.json. 180s gives 3x
+    // headroom while still catching a genuinely-hung init.
+    timeout: 180_000,
     // Don't fail if the command exits non-zero — init may partially succeed
   }
 );

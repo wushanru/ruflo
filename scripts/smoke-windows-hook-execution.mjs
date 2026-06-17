@@ -58,7 +58,11 @@ const initResult = spawnSync(
     cwd: tmpDir,
     env: { ...process.env, CI: 'true', FORCE_COLOR: '0' },
     encoding: 'utf8',
-    timeout: 60_000,
+    // iter 123 — bumped from 60_000 to 180_000 (same reason as
+    // scripts/smoke-windows-init-hooks.mjs). Cold-start `ruflo init` on
+    // Windows runners exceeds 60s; init exits with status=null (timer
+    // fired) and no settings.json is written. 180s gives 3x headroom.
+    timeout: 180_000,
   }
 );
 
